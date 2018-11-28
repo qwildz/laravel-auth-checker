@@ -240,26 +240,26 @@ class AuthChecker
     public function deviceMatch(Device $device, Agent $agent, array $attributes = null)
     {
         $attributes = is_null($attributes) ? $this->getDeviceMatchingAttributesConfig() : $attributes;
-        $matches = count($attributes) > 0 ? false : true;
+        $matches = true;
 
         if (in_array('platform', $attributes)) {
-            $matches = $device->platform === $agent->platform();
+            $matches = $matches && $device->platform === $agent->platform();
         }
 
         if (in_array('platform_version', $attributes)) {
-            $matches = $device->platform_version === $agent->version($device->platform);
+            $matches = $matches && $device->platform_version === $agent->version($device->platform);
         }
 
         if (in_array('browser', $attributes)) {
-            $matches = $device->browser === $agent->browser();
+            $matches = $matches && $device->browser === $agent->browser();
         }
 
         if (in_array('browser_version', $attributes)) {
-            $matches = $device->browser_version === $agent->version($device->browser);
+            $matches = $matches && $device->browser_version === $agent->version($device->browser);
         }
 
         if (in_array('language', $attributes)) {
-            $matches = $device->language === $agent->version($device->language);
+            $matches = $matches && $device->language === $agent->version($device->language);
         }
 
         return $matches;
