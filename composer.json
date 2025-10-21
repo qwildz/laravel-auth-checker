@@ -1,5 +1,5 @@
 {
-  "name": "lab404/laravel-auth-checker",
+  "name": "qwildz/laravel-auth-checker",
   "description": "Laravel Auth Checker allows you to log users authentication, devices authenticated from and lock intrusions.",
   "type": "library",
   "keywords": [
