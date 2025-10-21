@@ -64,9 +64,9 @@ class AuthChecker
         }
     }
 
-    public function findOrCreateUserDeviceByAgent(HasLoginsAndDevicesInterface $user, Agent $agent = null): Device
+    public function findOrCreateUserDeviceByAgent(HasLoginsAndDevicesInterface $user, ?Agent $agent = null): Device
     {
-        $agent = is_null($agent) ? $this->app['agent'] : $agent;
+        $agent = is_null($agent) ? $this->createSafeAgent() : $agent;
         $device = $this->findUserDeviceByAgent($user, $agent);
 
         if (is_null($device)) {
@@ -95,13 +95,55 @@ class AuthChecker
         $model = config('auth-checker.models.device') ?? Device::class;
         $device = new $model;
 
-        $device->platform = $agent->platform();
-        $device->platform_version = $agent->version($device->platform);
-        $device->browser = $agent->browser();
-        $device->browser_version = $agent->version($device->browser);
-        $device->is_desktop = $agent->isDesktop();
-        $device->is_mobile = $agent->isMobile();
-        $device->language = count($agent->languages()) ? $agent->languages()[0] : null;
+        // Set platform
+        try {
+            $device->platform = $agent->platform();
+        } catch (\Throwable $e) {
+            $device->platform = 'Unknown';
+        }
+
+        // Set platform version
+        try {
+            $device->platform_version = $agent->version($device->platform);
+        } catch (\Throwable $e) {
+            $device->platform_version = null;
+        }
+
+        // Set browser
+        try {
+            $device->browser = $agent->browser();
+        } catch (\Throwable $e) {
+            $device->browser = 'Unknown';
+        }
+
+        // Set browser version
+        try {
+            $device->browser_version = $agent->version($device->browser);
+        } catch (\Throwable $e) {
+            $device->browser_version = null;
+        }
+
+        // Set desktop flag
+        try {
+            $device->is_desktop = $agent->isDesktop();
+        } catch (\Throwable $e) {
+            $device->is_desktop = true; // Default to desktop
+        }
+
+        // Set mobile flag
+        try {
+            $device->is_mobile = $agent->isMobile();
+        } catch (\Throwable $e) {
+            $device->is_mobile = false;
+        }
+
+        // Set language
+        try {
+            $languages = $agent->languages();
+            $device->language = count($languages) ? $languages[0] : null;
+        } catch (\Throwable $e) {
+            $device->language = null;
+        }
 
         $device->user()->associate($user);
 
@@ -112,6 +154,40 @@ class AuthChecker
         return $device;
     }
 
+    /**
+     * Create a safe Agent instance that handles malformed headers gracefully
+     */
+    private function createSafeAgent(): Agent
+    {
+        try {
+            // First try to get the agent normally
+            $agent = $this->app['agent'];
+            
+            // Test if the agent works by calling a method that might trigger the error
+            $agent->platform();
+            
+            return $agent;
+        } catch (\Throwable $e) {
+            // If there's an issue with headers, create a new Agent with cleaned headers
+            $request = clone $this->request;
+            
+            // Clean any array headers that might cause issues
+            $headers = $request->headers->all();
+            foreach ($headers as $key => $value) {
+                if (is_array($value)) {
+                    $request->headers->set($key, implode(', ', $value));
+                }
+            }
+            
+            // Create a new Agent instance with the cleaned request
+            $agent = new Agent();
+            $agent->setUserAgent($request->server->get('HTTP_USER_AGENT', ''));
+            $agent->setHttpHeaders($request->headers->all());
+            
+            return $agent;
+        }
+    }
+
     public function findUserFromPayload(Collection $payload): ?HasLoginsAndDevicesInterface
     {
         $login_column = $this->getLoginColumnConfig();
@@ -120,8 +196,8 @@ class AuthChecker
             $model = (string)$this->config->get('auth.providers.users.model');
             $login_value = $payload->get($login_column);
 
-            /** @var Builder $model */
-            $user = $model::where($login_column, '=', $login_value)->first();
+            /** @var HasLoginsAndDevicesInterface $user */
+            $user = app($model)->where($login_column, '=', $login_value)->first();
             return $user;
         }
 
@@ -185,7 +261,7 @@ class AuthChecker
         return true;
     }
 
-    public function deviceMatch(Device $device, Agent $agent, array $attributes = null): bool
+    public function deviceMatch(Device $device, Agent $agent, ?array $attributes = null): bool
     {
         $attributes = is_null($attributes) ? $this->getDeviceMatchingAttributesConfig() : $attributes;
         $matches = 0;
